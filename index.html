@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Hack-Dex</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<style>
+:root{--bg:#0e1019;--surface:#171a28;--line:#272c42;--text:#e9ebf5;--muted:#8d93ad;--accent:#ff5d4a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*:before,*:after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:14px 14px 12px;border-bottom:3px solid var(--accent)}
+h1{margin:0 0 10px;font-size:1.35rem;letter-spacing:-.01em}
+.controls{display:grid;gap:8px}
+select,input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--text);font:inherit}
+select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.count{margin:10px 14px 0;color:var(--muted);font-size:.85rem}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;padding:12px 14px 28px}
+.card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.name{font-size:1.2rem;font-weight:700}
+.num{color:var(--muted);font-variant-numeric:tabular-nums}
+.types{display:flex;gap:6px;flex-wrap:wrap}
+.tag{padding:3px 11px;border-radius:99px;font-size:.8rem;font-weight:600;color:#10121a}
+h3{margin:0 0 4px;font-size:.85rem;color:var(--muted);font-weight:600}
+ul{margin:0;padding-left:18px}
+li{margin:2px 0}
+.note{background:#0e1019;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:40px 10px}
+@media(min-width:640px){.controls{grid-template-columns:240px 1fr}}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hack-Dex">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0e1019">
+</head>
+<body>
+<header>
+  <h1>Hack-Dex</h1>
+  <div class="controls">
+    <select id="hack" aria-label="ROM-Hack wählen"></select>
+    <input id="q" type="search" placeholder="Name, Typ, Fundort oder Nummer …" aria-label="Suche" autocomplete="off">
+  </div>
+</header>
+<div class="count" id="count" aria-live="polite"></div>
+<main id="list"></main>
+
+<script>
+/* ====== DATEN – hier erweitern ======
+Neuer Hack:   Eintrag in HACKS mit eigener Farbe + pokemon-Liste.
+Neues Pokémon: { id, name, types:[…], locations:[…], evolutions:[…], note:"…" }
+Typen (deutsch) siehe TYPE_COLORS. Alle Angaben unten sind nur Beispieldaten. */
+const HACKS = {
+  "Pokémon Unbound": { color:"#ff8a3d", pokemon:[
+    { id:133, name:"Evoli", types:["Normal"],
+      locations:["Route 2 (hohes Gras)","Geschenk im Spielcorner"],
+      evolutions:["Feuerstein → Flamara","Freundschaft + Nacht → Nachtara"],
+      note:"Beispiel: Früh im Team nehmen, Entwicklung erst nach dem 3. Orden planen." },
+    { id:246, name:"Larvitar", types:["Gestein","Boden"],
+      locations:["Eisenberg-Höhle, Ebene B2"],
+      evolutions:["Lv. 30 → Pupitar","Lv. 55 → Despotar"],
+      note:"Beispiel: Gegen Eis- und Feuer-Arenen stark, Wasser und Pflanze fürchten." },
+    { id:147, name:"Dratini", types:["Drache"],
+      locations:["Angeln im Safari-Teich (Superangel)"],
+      evolutions:["Lv. 30 → Dragonir","Lv. 55 → Dragoran"],
+      note:"Beispiel: Fee-Konter früh einplanen, Eisstrahl-TM mitnehmen." }
+  ]},
+  "Radical Red": { color:"#e03a3a", pokemon:[
+    { id:82, name:"Magneton", types:["Elektro","Stahl"],
+      locations:["Kraftwerk, 1. Etage"],
+      evolutions:["Magnetilo Lv. 30 → Magneton","Magneton → Magnezone (Levelup am Magnetfeld)"],
+      note:"Beispiel: Starke Defensive, Bodenangriffe sind die große Schwäche." },
+    { id:129, name:"Karpador", types:["Wasser"],
+      locations:["Route 12 (Angeln, alle Angeln)"],
+      evolutions:["Lv. 20 → Garados"],
+      note:"Beispiel: Garados bekommt hier Mega-Entwicklung – Mega-Stein aufbewahren." },
+    { id:92, name:"Nebulak", types:["Geist","Gift"],
+      locations:["Pokémon-Turm, 3. Stock"],
+      evolutions:["Lv. 25 → Alpollo","Tausch → Gengar"],
+      note:"Beispiel: Schnell und fragil, Hinterhalt-Taktik mit Fokusband." }
+  ]},
+  "Modern Emerald": { color:"#2fbf7a", pokemon:[
+    { id:280, name:"Trasla", types:["Psycho","Fee"],
+      locations:["Route 102 (Gras, 10 %)"],
+      evolutions:["Lv. 20 → Kirlia","Lv. 30 → Guardevoir","Sonnenschliff (♂) → Galagladi"],
+      note:"Beispiel: Früh Zauberschein nutzen, Gift- und Stahl-Gegner meiden." },
+    { id:66, name:"Machollo", types:["Kampf"],
+      locations:["Granit-Höhle, 1. Ebene"],
+      evolutions:["Lv. 28 → Maschock","Tausch → Machomei"],
+      note:"Beispiel: Gegen Normal-Arenen stark, Flug-Typen sind ein Problem." },
+    { id:41, name:"Zubat", types:["Gift","Flug"],
+      locations:["Meteorfall-Höhle (häufig)"],
+      evolutions:["Lv. 22 → Golbat","Freundschaft → Iksbat"],
+      note:"Beispiel: Als Early-Game-Scout nützlich, später ersetzen." }
+  ]},
+  /* Leere Hacks: Pokémon im Array pokemon:[] ergänzen. Ohne color wird automatisch eine Farbe gewählt. */
+  "Adventures – Red Chapter": { pokemon:[] },
+  "Amethyst": { pokemon:[] },
+  "Crown": { pokemon:[] },
+  "Dreams": { pokemon:[] },
+  "Emerald Seaglass": { pokemon:[] },
+  "FireRed Extended": { pokemon:[] },
+  "Gaia": { pokemon:[] },
+  "Ghost Grey": { pokemon:[] },
+  "Glazed": { pokemon:[] },
+  "HarvestCraft": { pokemon:[] },
+  "Lazarus": { pokemon:[] },
+  "Let’s Go Pikachu": { pokemon:[] },
+  "Liquid Crystal": { pokemon:[] },
+  "Mega Power": { pokemon:[] },
+  "Mercury": { pokemon:[] },
+  "Odyssey": { pokemon:[] },
+  "Orange Islands": { pokemon:[] },
+  "R.O.W.E.": { pokemon:[] },
+  "Rocket": { pokemon:[] },
+  "Schwert und Schild": { pokemon:[] },
+  "Sienna": { pokemon:[] },
+  "Sovereign of the Skies": { pokemon:[] },
+  "Turnabout at Sea": { pokemon:[] }
+};
+const TYPE_COLORS = {Normal:"#b8b8a8",Feuer:"#ff8a3d",Wasser:"#4d9bff",Pflanze:"#5fcf6b",Elektro:"#ffd93b",Eis:"#7fe3f0",
+  Kampf:"#e0533d",Gift:"#b660d6",Boden:"#d9b25e",Flug:"#9db4ff",Psycho:"#ff6fa4",Käfer:"#aed03a",Gestein:"#c4ac5a",
+  Geist:"#8466c4",Drache:"#6a6cff",Unlicht:"#8a7060",Stahl:"#a9b9cf",Fee:"#ffa8de"};
+
+/* Basis-Dex: Original-Daten der Pokémon #1–386 (Typen, Standard-Entwicklungen). Hack-Änderungen selbst ergänzen.
+   Format je Eintrag: Name:Typen:Entwicklung  (Typ-Kürzel siehe TL; Zahl = Level, t=Tausch, m/d/f/w/b/s = Mond-/Donner-/Feuer-/Wasser-/Blatt-/Sonnenstein, - = keine, "Methode>Ziel" = frei) */
+const DEX = "Bisasam:PG:16;Bisaknosp:PG:32;Bisaflor:PG:-;Glumanda:F:16;Glutexo:F:36;Glurak:FL:-;Schiggy:W:16;Schillok:W:36;Turtok:W:-;Raupy:A:7;Safcon:A:10;Smettbo:AL:-;Hornliu:AG:7;Kokuna:AG:10;Bibor:AG:-;Taubsi:NL:18;Tauboga:NL:36;Tauboss:NL:-;Rattfratz:N:20;Rattikarl:N:-;Habitak:NL:20;Ibitak:NL:-;Rettan:G:22;Arbok:G:-;Pikachu:E:d;Raichu:E:-;Sandan:B:22;Sandamer:B:-;Nidoran♀:G:16;Nidorina:G:m;Nidoqueen:GB:-;Nidoran♂:G:16;Nidorino:G:m;Nidoking:GB:-;Piepi:Z:m;Pixi:Z:-;Vulpix:F:f;Vulnona:F:-;Pummeluff:NZ:m;Knuddeluff:NZ:-;Zubat:GL:22;Golbat:GL:Freundschaft>Iksbat;Myrapla:PG:21;Duflor:PG:Blattstein>Giflor|Sonnenstein>Blubella;Giflor:PG:-;Paras:AP:24;Parasek:AP:-;Bluzuk:AG:31;Omot:AG:-;Digda:B:26;Digdri:B:-;Mauzi:N:28;Snobilikat:N:-;Enton:W:33;Entoron:W:-;Menki:K:28;Rasaff:K:-;Fukano:F:f;Arkani:F:-;Quapsel:W:25;Quaputzi:W:w|Tausch mit Königsstein>Quaxo;Quappo:WK:-;Abra:Y:16;Kadabra:Y:t;Simsala:Y:-;Machollo:K:28;Maschock:K:t;Machomei:K:-;Knofensa:PG:21;Ultrigaria:PG:b;Sarzenia:PG:-;Tentacha:WG:30;Tentoxa:WG:-;Kleinstein:SB:25;Georok:SB:t;Geowaz:SB:-;Ponita:F:40;Gallopa:F:-;Flegmon:WY:37|Tausch mit Königsstein>Laschoking;Lahmus:WY:-;Magnetilo:ET:30;Magneton:ET:Magnetfeld>Magnezone;Porenta:NL:-;Dodu:NL:31;Dodri:NL:-;Jurob:W:34;Jugong:WI:-;Sleima:G:38;Sleimok:G:-;Muschas:W:w;Austos:WI:-;Nebulak:HG:25;Alpollo:HG:t;Gengar:HG:-;Onix:SB:Tausch mit Metallmantel>Stahlos;Traumato:Y:26;Hypno:Y:-;Krabby:W:28;Kingler:W:-;Voltobal:E:30;Lektrobal:E:-;Owei:PY:s;Kokowei:PY:-;Tragosso:B:28;Knogga:B:-;Kicklee:K:-;Nockchan:K:-;Schlurp:N:-;Smogon:G:35;Smogmog:G:-;Rihorn:BS:42;Rizeros:BS:-;Chaneira:N:Freundschaft>Heiteira;Tangela:P:-;Kangama:N:-;Seeper:W:32;Seemon:W:Tausch mit Drachenschuppe>Seedraking;Goldini:W:33;Golking:W:-;Sterndu:W:w;Starmie:WY:-;Pantimos:YZ:-;Sichlor:AL:Tausch mit Metallmantel>Scherox;Rossana:IY:-;Elektek:E:-;Magmar:F:-;Pinsir:A:-;Tauros:N:-;Karpador:W:20;Garados:WL:-;Lapras:WI:-;Ditto:N:-;Evoli:N:Wasserstein>Aquana|Donnerstein>Blitza|Feuerstein>Flamara|Freundschaft (Tag)>Psiana|Freundschaft (Nacht)>Nachtara;Aquana:W:-;Blitza:E:-;Flamara:F:-;Porygon:N:Tausch mit Up-Grade>Porygon2;Amonitas:SW:40;Amoroso:SW:-;Kabuto:SW:40;Kabutops:SW:-;Aerodactyl:SL:-;Relaxo:N:-;Arktos:IL:-;Zapdos:EL:-;Lavados:FL:-;Dratini:D:30;Dragonir:D:55;Dragoran:DL:-;Mewtu:Y:-;Mew:Y:-;Endivie:P:16;Lorblatt:P:32;Meganie:P:-;Feurigel:F:14;Igelavar:F:36;Tornupto:F:-;Karnimani:W:18;Tyracroc:W:30;Impergator:W:-;Wiesor:N:15;Wiesenior:N:-;Hoothoot:NL:20;Noctuh:NL:-;Ledyba:AL:18;Ledian:AL:-;Webarak:AG:22;Ariados:AG:-;Iksbat:GL:-;Lampi:WE:27;Lanturn:WE:-;Pichu:E:Freundschaft>Pikachu;Pii:Z:Freundschaft>Piepi;Fluffeluff:NZ:Freundschaft>Pummeluff;Togepi:Z:Freundschaft>Togetic;Togetic:ZL:-;Natu:YL:25;Xatu:YL:-;Voltilamm:E:15;Waaty:E:30;Ampharos:E:-;Blubella:P:-;Marill:WZ:18;Azumarill:WZ:-;Mogelbaum:S:-;Quaxo:W:-;Hoppspross:PL:18;Hubelupf:PL:27;Papungha:PL:-;Griffel:N:-;Sonnkern:P:s;Sonnflora:P:-;Yanma:AL:-;Felino:WB:20;Morlord:WB:-;Psiana:Y:-;Nachtara:U:-;Kramurx:UL:-;Laschoking:WY:-;Traunfugil:H:-;Icognito:Y:-;Woingenau:Y:-;Girafarig:NY:-;Tannza:A:31;Forstellka:AT:-;Dummisel:N:-;Skorgla:BL:-;Stahlos:TB:-;Snubbull:Z:23;Granbull:Z:-;Baldorfish:WG:-;Scherox:AT:-;Pottrott:AS:-;Skaraborn:AK:-;Sniebel:UI:-;Teddiursa:N:30;Ursaring:N:-;Schneckmag:F:38;Magcargo:FS:-;Quiekel:IB:33;Keifel:IB:-;Corasonn:WS:-;Remoraid:W:25;Octillery:W:-;Botogel:IL:-;Mantax:WL:-;Panzaeron:TL:-;Hunduster:UF:24;Hundemon:UF:-;Seedraking:WD:-;Phanpy:B:25;Donphan:B:-;Porygon2:N:-;Damhirplex:N:-;Farbeagle:N:-;Rabauz:K:Lv. 20 (Angriff höher)>Kicklee|Lv. 20 (Verteidigung höher)>Nockchan|Lv. 20 (beide gleich)>Kapoera;Kapoera:K:-;Kussilla:IY:Lv. 30>Rossana;Elekid:E:Lv. 30>Elektek;Magby:F:Lv. 30>Magmar;Miltank:N:-;Heiteira:N:-;Raikou:E:-;Entei:F:-;Suicune:W:-;Larvitar:SB:30;Pupitar:SB:55;Despotar:SU:-;Lugia:YL:-;Ho-Oh:FL:-;Celebi:YP:-;Geckarbor:P:16;Reptain:P:36;Gewaldro:P:-;Flemmli:F:16;Jungglut:FK:36;Lohgock:FK:-;Hydropi:W:16;Moorabbel:WB:36;Sumpex:WB:-;Fiffyen:U:18;Magnayen:U:-;Zigzachs:N:20;Geradaks:N:-;Waumpel:A:Lv. 7>Schaloko|Lv. 7>Panekon;Schaloko:A:10;Papinella:AL:-;Panekon:A:10;Pudox:AG:-;Loturzel:WP:14;Lombrero:WP:w;Kappalores:WP:-;Samurzel:P:14;Blanas:PU:b;Tengulist:PU:-;Schwalbini:NL:22;Schwalboss:NL:-;Wingull:WL:25;Pelipper:WL:-;Trasla:YZ:20;Kirlia:YZ:30;Guardevoir:YZ:-;Gehweiher:AW:22;Maskeregen:AL:-;Knilz:P:23;Kapilz:PK:-;Bummelz:N:18;Muntier:N:36;Letarking:N:-;Nincada:AB:20;Ninjask:AL:-;Ninjatom:AH:-;Flurmel:N:20;Krakeelo:N:40;Krawumms:N:-;Makuhita:K:24;Hariyama:K:-;Azurill:NZ:Freundschaft>Marill;Nasgnet:S:-;Eneco:N:m;Enekoro:N:-;Zobiris:UH:-;Flunkifer:TZ:-;Stollunior:TS:32;Stollrak:TS:42;Stolloss:TS:-;Meditie:KY:37;Meditalis:KY:-;Frizelbliz:E:26;Voltenso:E:-;Plusle:E:-;Minun:E:-;Volbeat:A:-;Illumise:A:-;Roselia:PG:-;Schluppuck:G:26;Schlukwech:G:-;Kanivanha:WU:30;Tohaido:WU:-;Wailmer:W:40;Wailord:W:-;Camaub:FB:33;Camerupt:FB:-;Qurtel:F:-;Spoink:Y:32;Groink:Y:-;Pandir:N:-;Knacklion:B:35;Vibrava:BD:45;Libelldra:BD:-;Tuska:P:32;Noktuska:PU:-;Wablu:NL:35;Altaria:DL:-;Sengo:N:-;Vipitis:G:-;Lunastein:SY:-;Sonnfel:SY:-;Schmerbe:WB:30;Welsar:WB:-;Krebscorps:W:30;Krebutack:WU:-;Puppance:BY:36;Lepumentas:BY:-;Liliep:SP:40;Wielie:SP:-;Anorith:SA:40;Armaldo:SA:-;Barschwa:W:Schönheit>Milotic;Milotic:W:-;Formeo:N:-;Kecleon:N:-;Shuppet:H:37;Banette:H:-;Zwirrlicht:H:37;Zwirrklop:H:-;Tropius:PL:-;Palimpalim:Y:-;Absol:U:-;Isso:Y:Lv. 15>Woingenau;Schneppke:I:42;Firnontor:I:-;Seemops:IW:32;Seejong:IW:44;Walraisa:IW:-;Perlu:W:Tausch mit Tiefseezahn>Aalabyss|Tausch mit Tiefseeschuppe>Saganabyss;Aalabyss:W:-;Saganabyss:W:-;Relicanth:WS:-;Liebiskus:W:-;Kindwurm:D:30;Draschel:D:50;Brutalanda:DL:-;Tanhel:TY:20;Metang:TY:45;Metagross:TY:-;Regirock:S:-;Regice:I:-;Registeel:T:-;Latias:DY:-;Latios:DY:-;Kyogre:W:-;Groudon:B:-;Rayquaza:DL:-;Jirachi:TY:-;Deoxys:Y:-;Chelast:P:18;Chelcarain:P:32;Chelterrar:PB:-;Panflam:F:14;Panpyro:FK:36;Panferno:FK:-;Plinfa:W:16;Pliprin:W:36;Impoleon:WT:-;Staralili:NL:14;Staravia:NL:34;Staraptor:NL:-;Bidiza:N:15;Bidifas:NW:-;Zirpurze:A:10;Zirpeise:A:-;Sheinux:E:15;Luxio:E:30;Luxtra:E:-;Knospi:PG:Freundschaft (Tag)>Roselia;Roserade:PG:-;Koknodon:S:30;Rameidon:S:-;Schilterus:ST:30;Bollterus:ST:-;Burmy:A:Lv. 20 (♀)>Burmadame|Lv. 20 (♂)>Moterpel;Burmadame:AP:-;Moterpel:AL:-;Wadribie:AL:Lv. 21 (♀)>Honweisel;Honweisel:AL:-;Pachirisu:E:-;Bamelin:W:26;Bojelin:W:-;Kikugi:P:25;Kinoso:P:-;Schalellos:W:30;Gastrodon:WB:-;Ambidiffel:N:-;Driftlon:HL:28;Drifzepeli:HL:-;Haspiror:N:Freundschaft>Schlapor;Schlapor:N:-;Traunmagil:H:-;Kramshef:UL:-;Charmian:N:38;Shnurgarst:N:-;Klingplim:Y:Freundschaft (Nacht)>Palimpalim;Skunkapuh:GU:34;Skuntank:GU:-;Bronzel:TY:33;Bronzong:TY:-;Mobai:S:Attacke Mimikry>Mogelbaum;Pantimimi:YZ:Attacke Mimikry>Pantimos;Wonneira:N:Ovaler Stein>Chaneira;Plaudagei:NL:-;Kryppuk:HU:-;Kaumalat:DB:24;Knarksel:DB:48;Knakrack:DB:-;Mampfaxo:N:Freundschaft>Relaxo;Riolu:K:Freundschaft (Tag)>Lucario;Lucario:KT:-;Hippopotas:B:34;Hippoterus:B:-;Pionskora:GA:40;Piondragi:GU:-;Glibunkel:GK:37;Toxiquak:GK:-;Venuflibis:P:-;Finneon:W:31;Lumineon:W:-;Mantirps:WL:Remoraid im Team>Mantax;Shnebedeck:PI:40;Rexblisar:PI:-;Sniborus:UI:-;Magnezone:ET:-;Schlurplek:N:-;Rihornior:BS:-;Tangoloss:P:-;Elevoltek:E:-;Magbrant:F:-;Togekiss:ZL:-;Yanmega:AL:-;Folipurba:P:-;Glaziola:I:-;Skorgro:BL:-;Mamutel:IB:-;Porygon-Z:N:-;Galagladi:YK:-;Voluminas:ST:-;Zwirrfinst:H:-;Frosdedje:IH:-;Rotom:EH:-;Selfe:Y:-;Vesprit:Y:-;Tobutz:Y:-;Dialga:TD:-;Palkia:WD:-;Heatran:FT:-;Regigigas:N:-;Giratina:HD:-;Cresselia:Y:-;Phione:W:-;Manaphy:W:-;Darkrai:U:-;Shaymin:P:-;Arceus:N:-;Victini:YF:-;Serpifeu:P:17;Efoserp:P:36;Serpiroyal:P:-;Floink:F:17;Ferkokel:FK:36;Flambirex:FK:-;Ottaro:W:17;Zwottronin:W:36;Admurai:W:-;Nagelotz:N:20;Kukmarda:N:-;Yorkleff:N:16;Terribark:N:32;Bissbark:N:-;Felilou:U:20;Kleoparda:U:-;Vegimak:P:b;Vegichita:P:-;Grillmak:F:f;Grillchita:F:-;Sodamak:W:w;Sodachita:W:-;Somniam:Y:m;Somnivora:Y:-;Dusselgurr:NL:21;Navitaub:NL:32;Fasasnob:NL:-;Elezeba:E:27;Zebritz:E:-;Kiesling:S:25;Sedimantur:S:t;Brockoloss:S:-;Fleknoil:YL:Freundschaft>Fletiamo;Fletiamo:YL:-;Rotomurf:B:31;Stalobor:BT:-;Ohrdoch:N:-;Praktibalk:K:25;Strepoli:K:t;Meistagrif:K:-;Schallquap:W:25;Mebrana:WB:36;Branawarz:WB:-;Jiutesto:K:-;Karadonis:K:-;Strawickl:A:20;Folikon:A:Freundschaft>Matrifol;Matrifol:AP:-;Toxiped:AG:22;Rollum:AG:30;Cerapendra:AG:-;Waumboll:PZ:s;Elfun:PZ:-;Lilminip:P:s;Dressella:P:-;Barschuft:W:-;Ganovil:BU:29;Rokkaiman:BU:40;Rabigator:BU:-;Flampion:F:35;Flampivian:F:-;Maracamba:P:-;Lithomith:AS:34;Castellith:AS:-;Zurrokex:UK:39;Irokex:UK:-;Symvolara:YL:-;Makabaja:H:34;Echnatoll:H:-;Galapaflos:WS:37;Karippas:WS:-;Flapteryx:SL:37;Aeropteryx:SL:-;Unratütox:G:36;Deponitox:G:-;Zorua:U:30;Zoroark:U:-;Picochilla:N:Leuchtstein>Chillabell;Chillabell:N:-;Mollimorba:Y:32;Hypnomorba:Y:41;Morbitesse:Y:-;Monozyto:Y:32;Mitodos:Y:41;Zytomega:Y:-;Piccolente:WL:35;Swaroness:WL:-;Gelatini:I:35;Gelatroppo:I:47;Gelatwino:I:-;Sesokitz:NP:34;Kronjuwild:NP:-;Emolga:EL:-;Laukaps:A:Tausch gegen Schnuthelm>Cavalanzas;Cavalanzas:AT:-;Tarnpignon:PG:39;Hutsassa:PG:-;Quabbel:WH:40;Apoquallyp:WH:-;Mamolida:W:-;Wattzapf:AE:36;Voltula:AE:-;Kastadur:PT:40;Tentantel:PT:-;Klikk:T:38;Kliklak:T:49;Klikdiklak:T:-;Zapplardin:E:39;Zapplalek:E:d;Zapplarang:E:-;Pygraulon:Y:42;Megalon:Y:-;Lichtel:HF:41;Laternecto:HF:Finsterstein>Skelabra;Skelabra:HF:-;Milza:D:38;Sharfax:D:48;Maxax:D:-;Petznief:I:37;Siberio:I:-;Frigometri:I:-;Schnuthelm:A:Tausch gegen Laukaps>Hydragil;Hydragil:A:-;Flunschlik:BE:-;Lin-Fu:K:50;Wie-Shu:K:-;Shardrago:D:-;Golbit:BH:43;Golgantes:BH:-;Gladiantri:UT:52;Caesurio:UT:-;Bisofank:N:-;Geronimatz:NL:54;Washakwil:NL:-;Skallyk:UL:54;Grypheldis:UL:-;Furnifraß:F:-;Fermicula:AT:-;Kapuno:UD:50;Duodino:UD:64;Trikephalo:UD:-;Ignivor:AF:59;Ramoth:AF:-;Kobalium:TK:-;Terrakium:SK:-;Viridium:PK:-;Boreos:L:-;Voltolos:EL:-;Reshiram:DF:-;Zekrom:DE:-;Demeteros:BL:-;Kyurem:DI:-;Keldeo:WK:-;Meloetta:NY:-;Genesect:AT:-";
+const TL = {N:"Normal",F:"Feuer",W:"Wasser",P:"Pflanze",E:"Elektro",I:"Eis",K:"Kampf",G:"Gift",B:"Boden",L:"Flug",Y:"Psycho",A:"Käfer",S:"Gestein",H:"Geist",D:"Drache",U:"Unlicht",T:"Stahl",Z:"Fee"};
+const ST = {t:"Tausch",m:"Mondstein",d:"Donnerstein",f:"Feuerstein",w:"Wasserstein",b:"Blattstein",s:"Sonnenstein"};
+const DEXROWS = DEX.split(";").map(r => r.split(":"));
+HACKS["Basis-Dex (Gen 1–3)"] = { color:"#6aa8ff", pokemon: DEXROWS.map(([n,t,e], i) => ({
+  id:i+1, name:n, types:[...t].map(c => TL[c]), locations:[], note:"",
+  evolutions: e === "-" ? [] : e.split("|").map(x => x.includes(">") ? x.replace(">"," → ") : (/^\d+$/.test(x) ? "Lv. " + x : ST[x]) + " → " + DEXROWS[i+1][0])
+})) };
+
+const ALLDEX = HACKS["Basis-Dex (Gen 1–3)"].pokemon;
+delete HACKS["Basis-Dex (Gen 1–3)"];
+[[1,1,151,"#6aa8ff"],[2,152,251,"#f2c14e"],[3,252,386,"#4fd1a5"],[4,387,493,"#b48cff"],[5,494,649,"#ff7a9c"]].forEach(([g,a,b,c]) =>
+  HACKS["Basis-Dex Gen " + g] = { color:c, pokemon: ALLDEX.filter(p => p.id >= a && p.id <= b) });
+
+const $ = id => document.getElementById(id);
+const sel = $("hack"), q = $("q"), list = $("list");
+Object.keys(HACKS).sort((a,b) => a.localeCompare(b,"de")).forEach(n => sel.add(new Option(n, n)));
+sel.value = "Basis-Dex Gen 1";
+const hackColor = n => HACKS[n].color || "hsl(" + ([...n].reduce((s,c) => s*31 + c.charCodeAt(0), 7) % 360) + " 70% 60%)";
+
+const li = a => a.length ? "<ul>" + a.map(x => "<li>" + x + "</li>").join("") + "</ul>" : "<span class='num'>Keine Angabe</span>";
+
+function render(){
+  const hack = HACKS[sel.value], term = q.value.trim().toLowerCase();
+  document.documentElement.style.setProperty("--accent", hackColor(sel.value));
+  const hits = hack.pokemon.filter(p =>
+    !term || [p.name, String(p.id), ...p.types, ...p.locations, ...p.evolutions].join(" ").toLowerCase().includes(term));
+  $("count").textContent = hits.length + " von " + hack.pokemon.length + " Pokémon";
+  list.innerHTML = hits.length ? hits.map(p => `
+    <article class="card">
+      <div class="top"><span class="name">${p.name}</span><span class="num">#${String(p.id).padStart(3,"0")}</span></div>
+      <div class="types">${p.types.map(t => `<span class="tag" style="background:${TYPE_COLORS[t]||"#888"}">${t}</span>`).join("")}</div>
+      <section><h3>Fundorte</h3>${li(p.locations)}</section>
+      <section><h3>Entwicklung</h3>${li(p.evolutions)}</section>
+      <section><h3>Strategie-Notiz</h3><div class="note">${p.note||"–"}</div></section>
+    </article>`).join("")
+    : "<div class='empty'>" + (hack.pokemon.length ? "Kein Treffer. Prüfe die Schreibweise oder suche nach Typ oder Fundort." : "Für diesen Hack sind noch keine Pokémon eingetragen. Ergänze sie im Datenblock im Code.") + "</div>";
+}
+sel.addEventListener("change", render);
+q.addEventListener("input", render);
+render();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
